@@ -5,7 +5,6 @@ import "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import "lib/openzeppelin-contracts/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-
 contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
     struct Party {
         uint256 id;
@@ -24,6 +23,7 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
     }
 
     mapping(uint256 => Party) public parties;
+    address[] public adminList;
     mapping(address => bool) public admins;
     mapping(uint256 => mapping(uint256 => uint256)) public salePrices; // partyId => tokenId => price
     mapping(uint256 => mapping(uint256 => address)) public nftOwners; // partyId => tokenId => owner
@@ -53,6 +53,11 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
         _;
     }
 
+    modifier onlyBeforeParty(uint256 _partyId) {
+        require(block.timestamp < parties[_partyId].startTime, "Party already started");
+        _;
+    }
+
     modifier onlyApprovedParty(uint256 _partyId) {
         require(parties[_partyId].approved, "Party not approved");
         _;
@@ -62,12 +67,23 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
 
     // SuperAdmin Functions
     function addAdmin(address _admin) external onlyOwner {
+        require(!admins[_admin], "Already an admin");
         admins[_admin] = true;
+        adminList.push(_admin);
         emit AdminAdded(_admin);
     }
 
     function removeAdmin(address _admin) external onlyOwner {
+        require(admins[_admin], "Not an admin");
         admins[_admin] = false;
+        // Remove from adminList array
+        for (uint i = 0; i < adminList.length; i++) {
+            if (adminList[i] == _admin) {
+                adminList[i] = adminList[adminList.length - 1];
+                adminList.pop();
+                break;
+            }
+        }
         emit AdminRemoved(_admin);
     }
 
@@ -112,7 +128,7 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
     }
 
     // User Functions
-    function joinParty(uint256 _partyId) external payable onlyApprovedParty(_partyId) {
+    function joinParty(uint256 _partyId) external payable onlyApprovedParty(_partyId) onlyBeforeParty(_partyId) {
         Party storage party = parties[_partyId];
         require(msg.value == party.entryFee, "Incorrect entry fee");
         require(party.participants.length < party.maxParticipants, "Party full");
@@ -170,20 +186,14 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
 
         emit NFTSold(_partyId, _tokenId, msg.sender, price);
     }
-    function getParty(uint256 _partyId) external view returns (
-    uint256 id,
-    string memory name,
-    string memory description,
-    string memory venue,
-    uint256 startTime,
-    uint256 endTime,
-    uint256 entryFee,
-    uint256 maxParticipants,
-    address admin,
-    address host,
-    bool approved,
-    uint256 participantCount
-) {
+
+    // Fetching Admin List
+    function getAllAdmins() external view returns (address[] memory) {
+        return adminList;
+    }
+
+
+    function getParty(uint256 _partyId) external view returns (uint256 id,string memory name,string memory description,string memory venue,uint256 startTime,uint256 endTime,uint256 entryFee,uint256 maxParticipants,address admin,address host,bool approved,uint256 participantCount) {
     Party storage party = parties[_partyId];
 
     return (
@@ -200,6 +210,6 @@ contract PartyManager is ERC721URIStorage, Ownable, ReentrancyGuard {
         party.approved,
         party.participants.length
     );
-}
+   }
 
 }
